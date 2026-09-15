@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HK Recommend · 课余去哪吃</title>
+  <style>
+    :root {
+      --ink: #17202a;
+      --muted: #697586;
+      --line: #dce2e8;
+      --paper: #f6f8f7;
+      --card: #ffffff;
+      --teal: #0e766e;
+      --teal-dark: #075e58;
+      --mint: #dff3ed;
+      --gold: #a56a16;
+      --gold-bg: #fff3d8;
+      --red: #a33a31;
+      --red-bg: #fde8e6;
+      --shadow: 0 12px 28px rgba(26, 47, 55, .08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .topbar { background: #123f40; color: #fff; }
+    .topbar-inner { max-width: 1180px; margin: auto; padding: 24px 24px 22px; display: flex; justify-content: space-between; gap: 24px; align-items: end; }
+    .eyebrow { margin: 0 0 4px; color: #a9d9d0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 4px; font-size: clamp(24px, 4vw, 36px); line-height: 1.15; }
+    .subtitle { margin: 0; color: #d2e8e4; }
+    .badge { white-space: nowrap; border: 1px solid rgba(255,255,255,.3); border-radius: 999px; padding: 7px 11px; color: #dff3ed; font-size: 12px; }
+    main { max-width: 1180px; margin: 0 auto; padding: 28px 24px 48px; }
+    .layout { display: grid; grid-template-columns: minmax(250px, 330px) 1fr; gap: 22px; align-items: start; }
+    .panel, .result-card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
+    .panel { padding: 20px; }
+    .panel h2 { margin-bottom: 18px; font-size: 17px; }
+    .field { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 6px; color: #40505c; font-size: 13px; font-weight: 600; }
+    input, select { width: 100%; border: 1px solid #cbd4db; border-radius: 5px; padding: 9px 10px; color: var(--ink); background: #fff; }
+    input:focus, select:focus { outline: 3px solid rgba(14,118,110,.16); border-color: var(--teal); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .primary { width: 100%; border: 0; border-radius: 5px; padding: 11px 14px; background: var(--teal); color: #fff; font-weight: 700; }
+    .primary:hover { background: var(--teal-dark); }
+    .hint { margin: 13px 0 0; color: var(--muted); font-size: 12px; }
+    .content { min-width: 0; }
+    .summary { display: flex; justify-content: space-between; gap: 16px; align-items: end; margin-bottom: 16px; }
+    .summary h2 { margin-bottom: 3px; font-size: 22px; }
+    .summary p { margin: 0; color: var(--muted); }
+    .date-label { color: var(--teal-dark); font-weight: 700; white-space: nowrap; }
+    .slots { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+    .slot { padding: 8px 11px; border: 1px solid #b6ddd5; border-radius: 5px; background: var(--mint); color: #075e58; font-weight: 600; }
+    .empty { border: 1px dashed #bac5cc; border-radius: 6px; padding: 18px; color: var(--muted); background: #fbfcfc; }
+    .results-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
+    .results-head h2 { margin: 0; font-size: 18px; }
+    .count { color: var(--muted); font-size: 13px; }
+    .results { display: grid; gap: 12px; }
+    .result-card { padding: 17px 18px; box-shadow: none; }
+    .result-top { display: flex; justify-content: space-between; gap: 14px; align-items: start; }
+    .result-card h3 { margin-bottom: 3px; font-size: 17px; }
+    .meta { margin: 0; color: var(--muted); font-size: 13px; }
+    .risk { flex: 0 0 auto; border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 700; }
+    .risk.low { background: var(--mint); color: var(--teal-dark); }
+    .risk.medium { background: var(--gold-bg); color: var(--gold); }
+    .risk.high { background: var(--red-bg); color: var(--red); }
+    .reason { margin: 13px 0 0; color: #344451; }
+    .card-foot { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 12px; color: var(--muted); font-size: 12px; }
+    .notice { margin: 16px 0 0; padding: 11px 13px; border-left: 3px solid #d49a3a; background: #fffaf0; color: #6e521f; font-size: 12px; }
+    footer { max-width: 1180px; margin: 0 auto; padding: 0 24px 35px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 760px) {
+      .topbar-inner { padding: 20px 18px; align-items: start; flex-direction: column; gap: 10px; }
+      main { padding: 20px 18px 36px; }
+      footer { padding: 0 18px 30px; }
+      .layout { grid-template-columns: 1fr; }
+      .summary { align-items: start; flex-direction: column; gap: 5px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <p class="eyebrow">HK Recommend · MVP 01</p>
+        <h1>课余时间，去哪吃？</h1>
+        <p class="subtitle">先从你的课表和就餐约束，找出更可能少排队的选择。</p>
+      </div>
+      <span class="badge">本地数据演示版</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="layout">
+      <aside class="panel">
+        <h2>设置一次查询</h2>
+        <div class="field">
+          <label for="date">日期</label>
+          <input id="date" type="date">
+        </div>
+        <div class="field">
+          <label for="location">活动地点</label>
+          <select id="location">
+            <option value="HKU">香港大学</option>
+            <option value="Central">中环</option>
+            <option value="Causeway Bay">铜锣湾</option>
+          </select>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="budget">人均预算（HKD）</label>
+            <input id="budget" type="number" min="0" step="10" value="100">
+          </div>
+          <div class="field">
+            <label for="duration">用餐时长（分钟）</label>
+            <input id="duration" type="number" min="30" step="5" value="60">
+          </div>
+        </div>
+        <div class="field">
+          <label for="cuisine">想吃什么</label>
+          <select id="cuisine">
+            <option value="all">不限</option>
+            <option value="粤菜">粤菜</option>
+            <option value="日料">日料</option>
+            <option value="西餐">西餐</option>
+            <option value="东南亚">东南亚</option>
+            <option value="素食">素食</option>
+          </select>
+        </div>
+        <button class="primary" id="searchBtn" type="button">查找空闲时间和餐厅</button>
+        <p class="hint">当前版本使用内置示例课表和餐厅数据，排队风险是基于时段的估计。</p>
+      </aside>
+
+      <section class="content" aria-live="polite">
+        <div class="summary">
+          <div>
+            <h2 id="dateTitle">可用就餐时间</h2>
+            <p id="scheduleNote">选择日期后，这里会显示课程之外的时间段。</p>
+          </div>
+          <span class="date-label" id="dateLabel"></span>
+        </div>
+        <div class="slots" id="slots"></div>
+        <div class="results-head">
+          <h2>餐厅建议</h2>
+          <span class="count" id="resultCount"></span>
+        </div>
+        <div class="results" id="results"></div>
+        <div class="notice">排队风险不是实时承诺。正式版本应接入餐厅平台或用户反馈，并显示数据来源与更新时间。</div>
+      </section>
+    </div>
+  </main>
+  <footer>学习项目 · 下一步可以把这里的本地函数封装成 Agent 工具。</footer>
+
+  <script>
+    // Demo timetable. Day numbers follow JavaScript's Sunday=0 convention.
+    const timetable = {
+      1: [{ start: '09:00', end: '11:00', name: 'Machine Learning' }, { start: '14:00', end: '16:00', name: 'Research Methods' }],
+      2: [{ start: '10:00', end: '12:00', name: 'Data Mining' }],
+      3: [{ start: '09:00', end: '12:00', name: 'Deep Learning' }, { start: '15:00', end: '17:00', name: 'Seminar' }],
+      4: [{ start: '13:00', end: '15:00', name: 'NLP' }],
+      5: [{ start: '10:00', end: '12:00', name: 'Project Workshop' }],
+      6: [],
+      0: []
+    };
+
+    const restaurants = [
+      { name: '港大新茶記', area: 'HKU', cuisines: ['粤菜'], price: 65, walk: 8, risk: { lunch: 'medium', dinner: 'low' }, note: '離校園近，適合課間快速用餐。' },
+      { name: '山道日食', area: 'HKU', cuisines: ['日料'], price: 95, walk: 12, risk: { lunch: 'low', dinner: 'medium' }, note: '午餐時段翻台較快，預算內可選。' },
+      { name: '薄扶林綠碗', area: 'HKU', cuisines: ['素食', '東南亞'], price: 88, walk: 15, risk: { lunch: 'low', dinner: 'low' }, note: '素食與東南亞選擇，通常不用久等。' },
+      { name: '中環海南站', area: 'Central', cuisines: ['東南亞'], price: 82, walk: 7, risk: { lunch: 'high', dinner: 'low' }, note: '晚餐較從容；工作日午餐可能較擁擠。' },
+      { name: '石板街小館', area: 'Central', cuisines: ['粤菜'], price: 110, walk: 10, risk: { lunch: 'medium', dinner: 'medium' }, note: '菜式選擇多，適合想吃熱菜的日子。' },
+      { name: '銅鑼灣小日和', area: 'Causeway Bay', cuisines: ['日料'], price: 125, walk: 6, risk: { lunch: 'medium', dinner: 'high' }, note: '位置方便，但晚餐熱門時段排隊風險較高。' },
+      { name: '維園餐桌', area: 'Causeway Bay', cuisines: ['西餐', '素食'], price: 98, walk: 11, risk: { lunch: 'low', dinner: 'medium' }, note: '有素食選項，午餐較容易找到座位。' }
+    ];
+
+    const $ = (id) => document.getElementById(id);
+    const dayNames = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+    const labels = { low: '低排隊風險', medium: '中等排隊風險', high: '高排隊風險' };
+
+    function minutes(value) {
+      const [hour, minute] = value.split(':').map(Number);
+      return hour * 60 + minute;
+    }
+
+    function clock(value) {
+      return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+    }
+
+    function freeSlots(events, dayStart = 8 * 60, dayEnd = 22 * 60) {
+      const sorted = events.map(e => [minutes(e.start), minutes(e.end)]).sort((a, b) => a[0] - b[0]);
+      const slots = [];
+      let cursor = dayStart;
+      sorted.forEach(([start, end]) => {
+        if (start > cursor) slots.push([cursor, start]);
+        cursor = Math.max(cursor, end);
+      });
+      if (cursor < dayEnd) slots.push([cursor, dayEnd]);
+      return slots;
+    }
+
+    function selectedMealPeriod(slots) {
+      const hasLunch = slots.some(([start, end]) => start < 14 * 60 && end > 11 * 60);
+      return hasLunch ? 'lunch' : 'dinner';
+    }
+
+    function render() {
+      const dateValue = $('date').value;
+      if (!dateValue) return;
+      const date = new Date(`${dateValue}T12:00:00`);
+      const day = date.getDay();
+      const events = timetable[day] || [];
+      const duration = Math.max(30, Number($('duration').value) || 60);
+      const slots = freeSlots(events);
+      const usable = slots.filter(([start, end]) => end - start >= duration + 30);
+
+      $('dateLabel').textContent = `${dateValue} · ${dayNames[day]}`;
+      $('scheduleNote').textContent = events.length ? `当天有 ${events.length} 节课，已预留 30 分钟交通缓冲。` : '当天没有录入课程，默认可使用 08:00 - 22:00。';
+      $('slots').innerHTML = usable.length
+        ? usable.map(([start, end]) => `<span class="slot">${clock(start)} - ${clock(end)}</span>`).join('')
+        : '<div class="empty">没有足够长的空闲时间段。可以缩短用餐时长，或选择其他日期。</div>';
+
+      const location = $('location').value;
+      const budget = Math.max(0, Number($('budget').value) || 0);
+      const cuisine = $('cuisine').value;
+      const period = selectedMealPeriod(usable);
+      const matches = usable.length ? restaurants
+        .filter(r => r.area === location && r.price <= budget && (cuisine === 'all' || r.cuisines.includes(cuisine)))
+        .sort((a, b) => ({ low: 0, medium: 1, high: 2 }[a.risk[period]] - { low: 0, medium: 1, high: 2 }[b.risk[period]]) || a.walk - b.walk) : [];
+
+      $('resultCount').textContent = matches.length ? `${matches.length} 家符合条件` : '暂无符合条件的餐厅';
+      $('results').innerHTML = matches.length ? matches.map(r => {
+        const risk = r.risk[period];
+        return `<article class="result-card">
+          <div class="result-top"><div><h3>${r.name}</h3><p class="meta">${r.cuisines.join(' · ')} · 人均约 HK$${r.price}</p></div><span class="risk ${risk}">${labels[risk]}</span></div>
+          <p class="reason">${r.note}</p>
+          <div class="card-foot"><span>步行约 ${r.walk} 分钟</span><span>按${period === 'lunch' ? '午餐' : '晚餐'}时段估计</span></div>
+        </article>`;
+      }).join('') : `<div class="empty">${usable.length ? '可以提高预算、选择“不限”菜系，或换一个活动地点。' : '先调整日期或缩短用餐时长，找到可用的就餐时间后再查看餐厅。'}</div>`;
+    }
+
+    const today = new Date();
+    $('date').value = today.toISOString().slice(0, 10);
+    $('searchBtn').addEventListener('click', render);
+    ['date', 'location', 'budget', 'duration', 'cuisine'].forEach(id => $(id).addEventListener('change', render));
+    render();
+  </script>
+</body>
+</html>

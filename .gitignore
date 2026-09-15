@@ -1,0 +1,14 @@
+node_modules
+
+# Local secrets and environment-specific configuration
+.env
+.env.*
+!.env.example
+
+# Generated files and local environments
+.next/
+.venv/
+__pycache__/
+*.py[cod]
+*.db
+tsconfig.tsbuildinfo
