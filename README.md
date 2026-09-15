@@ -1,72 +1,126 @@
 # HK Recommend
 
-一个使用 Next.js + React 前端、FastAPI 后端和大模型工具调用的香港课余就餐推荐 Agent 初版。
+一个使用 Next.js + React 前端、FastAPI 后端和大模型工具调用的香港课余就餐 Agent。
 
 ## 当前功能
 
-- React/Next.js App Router 对话界面。
-- FastAPI：`POST /api/chat` 和 `GET /health`。
-- 从中文对话中提取日期、地点、预算、菜系、用餐时长和午晚餐时段。
-- 根据示例课表计算 08:00-22:00 的空闲时间，并预留 30 分钟缓冲。
-- 按活动地点、预算和菜系筛选餐厅。
-- 按午餐/晚餐时段估计排队风险并排序。
-- 页面展示 Agent 的执行轨迹，便于学习工具调用流程。
-- 课表支持手动添加或 CSV 导入，课程字段为星期、课程号、开始时间和结束时间。
+- 使用自然语言解析日期、地点、预算、用餐时长、午餐/晚餐时段和饮食需求。
+- 地点使用用户原话查询，不再依赖中环、港大、城大等固定地点映射。
+- 支持已保存学校作为“学校附近”“下课后”等相对地点的上下文。
+- 区分菜系和具体菜品：支持粤菜、川菜、日料等菜系，也支持海鲜、炸鸡、海南鸡饭、乌冬面等具体菜品。
+- 根据课程表计算 08:00-22:00 的空闲时间，并预留 30 分钟缓冲。
+- 课表支持手动添加和 CSV 导入。
+- 学校信息保存到 SQLite，并通过 `/api/profile` 在页面启动时恢复。
+- 配置 Google Places API 后，按照用户地点和饮食需求查询真实餐厅。
+- 返回 Google 餐厅名称、地址、评分、价格等级或价格区间。
+- 餐厅结果以页面卡片展示，Agent 文字只概括空档和结果数量，避免重复输出整张餐厅列表。
+- 排队信息统一显示工作日/周末高峰时段说明。
+- 页面展示 Agent 的工具调用过程，便于调试和学习。
+- 配置 `MODEL_API_KEY` 时使用大模型进行工具规划；模型不可用时自动降级为本地确定性工作流。
 
-当前 Agent 支持两种模式：配置 `MODEL_API_KEY` 时由大模型通过工具调用完成规划；没有 key 时自动降级为本地中文解析和确定性工具工作流。
+## 数据和限制
 
-配置 `GOOGLE_MAPS_API_KEY` 后，后端会通过 Google Places Text Search 查询真实餐厅，并返回名称、类型、评分（五分制）和地址。Google Places 不提供稳定的人均港币价格，因此真实结果暂不按预算过滤；接口失败时会回退到示例数据。
+Google Places API 可以提供地点、营业信息、评分、价格等级等餐厅资料，但没有稳定公开的实时排队人数或等待分钟数接口。因此页面中的排队信息是基于工作日/周末用餐时段的估计，不代表实时排队情况。
+
+Google Places 的价格区间或价格等级不一定是精确人均港币金额。缺少精确价格时，页面会显示“价格较亲民”“中等价位”或“价格未提供”，不会显示虚假的 `HK$0`。
+
+菜单、餐厅介绍和菜品是否真实供应，当前主要依赖 Google Places 搜索结果；后续可以接入菜单数据和 RAG 做二次验证。
+
+## 配置
+
+复制环境变量模板：
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+在 `backend/.env` 中填写：
+
+```env
+# 可选：大模型工具调用
+MODEL_API_KEY=
+MODEL_BASE_URL=https://api.openai.com/v1
+MODEL_NAME=gpt-4o-mini
+
+# 查询真实餐厅所需
+GOOGLE_MAPS_API_KEY=
+```
+
+Google Cloud 需要启用 Places API，并配置计费账号。修改 `backend/.env` 后需要重启 FastAPI。
 
 ## 运行
 
-终端 1（后端）：
+后端：
 
 ```bash
 cd "/Users/n1sm0/学习/Hk Recommend"
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r backend/requirements.txt
-cp backend/.env.example .env
 uvicorn backend.main:app --reload --port 8000
 ```
 
-终端 2（前端）：
+前端另开一个终端：
 
 ```bash
+cd "/Users/n1sm0/学习/Hk Recommend"
 npm install
 npm run dev
 ```
 
-然后打开 <http://localhost:3000>。
+打开 <http://localhost:3000>。
 
-也可以运行：
+验证命令：
 
 ```bash
 npm run typecheck
 npm run build
 ```
 
+## API
+
+| 方法 | 路径 | 作用 |
+|---|---|---|
+| `POST` | `/api/chat` | 处理自然语言就餐请求 |
+| `GET` | `/api/profile` | 读取已保存学校和课表状态 |
+| `GET` | `/api/schedule` | 读取课程表 |
+| `POST` | `/api/schedule/manual` | 手动添加课程 |
+| `POST` | `/api/schedule/csv` | 导入 CSV 课表 |
+| `DELETE` | `/api/schedule/{course_id}` | 删除课程 |
+| `GET` | `/health` | 后端健康检查 |
+
 ## 目录
 
 ```text
-app/page.tsx                 React 页面
-backend/main.py              FastAPI 应用入口
-backend/agent.py             大模型 Agent 和本地降级逻辑
-backend/tools.py             课表、餐厅工具
-backend/data.py              后端示例数据
-app/api/chat/route.ts        旧版 Next.js 兼容接口
-lib/parse-request.ts         旧版前端解析逻辑
-lib/data.ts                  示例课表和餐厅数据
-lib/recommend.ts             时间计算与 Agent 工作流
-app/globals.css              页面样式
+app/page.tsx                 React 对话界面和课表设置
+backend/main.py              FastAPI 应用入口和 API
+backend/agent.py             Agent、自然语言解析和模型工具调用
+backend/tools.py             空闲时间和 Google Places 餐厅工具
+backend/data.py              本地示例课表和餐厅数据
+backend/schedule_store.py    SQLite 课表和学校记忆
+backend/.env.example         后端环境变量模板
+lib/parse-request.ts         Next.js 兼容解析逻辑
+lib/data.ts                  前端示例数据和类型
+lib/recommend.ts             前端兼容推荐流程
 ```
 
-## 下一步
+## TODO
 
-1. 将 `lib/data.ts` 改成 SQLite/PostgreSQL 数据源。
-2. 增加 `.ics` 课表导入和用户偏好记忆。
-3. 将 `getFreeSlots` 和餐厅筛选封装成工具，接入支持 tool calling 的模型。
-4. 接入地图、营业时间和餐厅平台数据，并显示来源与更新时间。
-5. 为时间计算、筛选逻辑和 Agent 工具调用增加 `pytest` 测试。
-
-排队风险目前是示例估计，不是实时承诺。
+- [x] 自然语言解析日期、地点、预算、时长和用餐时段
+- [x] 支持菜系和具体菜品的区分
+- [x] 支持学校记忆和学校附近的相对地点
+- [x] 读取课程表并计算空闲时间
+- [x] 手动添加和 CSV 导入课表
+- [x] 接入 Google Places Text Search 查询真实餐厅
+- [x] 显示 Google 评分、地址和价格等级/价格区间
+- [x] 显示工作日和周末排队风险时段估计
+- [x] Agent 工具调用轨迹展示
+- [ ] 接入餐厅菜单、菜品和过敏原资料
+- [ ] 增加 RAG 菜单检索和餐厅菜品二次验证
+- [ ] 增加 `.ics` 课表导入
+- [ ] 增加用户饮食偏好和忌口记忆
+- [ ] 接入可提供实时排队/候位信息的餐厅平台
+- [ ] 增加餐厅营业状态和数据更新时间展示
+- [ ] 将前端示例数据迁移到统一后端数据源
+- [ ] 增加 Python `pytest` 和端到端测试
+- [ ] 增加错误监控、请求日志和 API 重试策略
