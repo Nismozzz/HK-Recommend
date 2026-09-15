@@ -5,7 +5,7 @@ export type Course = { start: string; end: string; name: string };
 
 export type Restaurant = {
   id: string; name: string; area: string; cuisines: string[]; price: number;
-  priceLabel?: string; walkMinutes: number; rating: number; crowd: Record<MealPeriod, CrowdRisk>; note: string;
+  priceLabel?: string; queueSummary?: string; walkMinutes: number; rating: number; crowd: Record<MealPeriod, CrowdRisk>; note: string;
 };
 
 // Sunday is 0, matching JavaScript Date.getDay(). Replace this with an import later.
@@ -44,4 +44,4 @@ export const areas = [
   { value: 'Causeway Bay', label: '铜锣湾' }
 ];
 
-export const cuisines = ['粤菜', '日料', '西餐', '东南亚', '素食'];
+export const cuisines = ['粤菜', '日料', '乌冬面', '西餐', '东南亚', '素食'];

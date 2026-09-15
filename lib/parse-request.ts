@@ -30,8 +30,11 @@ function parseDate(message: string, now: Date) {
 
 export function parseRecommendationRequest(message: string, now = new Date()): ParsedRequest {
   const locationMatch = message.match(/(?:在|去|位于|位於)\s*([^，。,.！!；;\n]{2,60}?)(?:附近|一带|一帶|吃|用餐|$)/);
-  const area = locationMatch?.[1]?.trim() || '';
-  const cuisine = /日料|日本菜|寿司|壽司/.test(message) ? '日料' : /粤菜|粵菜|港式|茶餐厅|茶餐廳/.test(message) ? '粤菜' : /西餐/.test(message) ? '西餐' : /东南亚|東南亞|泰国|泰國|越南/.test(message) ? '东南亚' : /素食|斋|齋/.test(message) ? '素食' : 'all';
+  const rawLocation = locationMatch?.[1]?.trim() || '';
+  const area = /(?:周|星期)[一二三四五六日天]|下课|下課|午餐|晚餐|吃饭|吃飯|用餐/.test(rawLocation) ? '' : rawLocation;
+  const cuisine = /日料|日本菜|寿司|壽司/.test(message) ? '日料' : /粤菜|粵菜|港式|茶餐厅|茶餐廳/.test(message) ? '粤菜' : /川菜|川味|四川菜/.test(message) ? '川菜' : /西餐/.test(message) ? '西餐' : /东南亚|東南亞|泰国|泰國|越南/.test(message) ? '东南亚' : /素食|斋|齋/.test(message) ? '素食' : 'all';
+  const dishes = Array.from(new Set((message.match(/乌冬面?|烏冬面?|うどん|海鲜|海鮮|炸鸡|炸雞|海南鸡饭|海南雞飯/gi) || [])));
+  const foodQuery = dishes[0] || (cuisine === 'all' ? undefined : cuisine);
   const budgetMatch = message.match(/(?:预算|預算|人均|最多|不超过|不超過|以内|以內)[^\d]{0,6}(\d{2,4})/i) ?? message.match(/(\d{2,4})\s*(?:港币|港幣|hkd|元|块|塊)/i);
   const minuteMatch = message.match(/(\d{2,3})\s*(?:分钟|分鐘|min)/i);
   const hourMatch = message.match(/(\d(?:\.\d+)?)\s*(?:小时|小時)/);
@@ -40,7 +43,7 @@ export function parseRecommendationRequest(message: string, now = new Date()): P
   const duration = minuteMatch ? Number(minuteMatch[1]) : hourMatch ? Math.round(Number(hourMatch[1]) * 60) : 60;
   const date = parseDate(message, now);
   const areaName = area || '未指定';
-  const understood = [`日期 ${date}`, `地点 ${areaName}`, `预算 HK$${budget}`, `用餐 ${duration} 分钟`, cuisine === 'all' ? '菜系不限' : `菜系 ${cuisine}`];
+  const understood = [`日期 ${date}`, `地点 ${areaName}`, `预算 HK$${budget}`, `用餐 ${duration} 分钟`, dishes.length ? `菜品 ${dishes.join('、')}` : cuisine === 'all' ? '菜系不限' : `菜系 ${cuisine}`];
   if (preferredPeriod) understood.push(preferredPeriod === 'lunch' ? '午餐时段' : '晚餐时段');
-  return { date, area, budget, cuisine, duration, preferredPeriod, understood };
+  return { date, area, budget, cuisine, foodQuery, dishes, duration, preferredPeriod, understood };
 }

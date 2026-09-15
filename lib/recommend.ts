@@ -1,7 +1,7 @@
 import { restaurants, timetable, type Course, type CrowdRisk, type MealPeriod, type Restaurant } from './data';
 
 export type TimeSlot = { start: string; end: string; minutes: number };
-export type RecommendationRequest = { date: string; area: string; budget: number; cuisine: string; duration: number; preferredPeriod?: MealPeriod };
+export type RecommendationRequest = { date: string; area: string; budget: number; cuisine: string; foodQuery?: string; dishes?: string[]; duration: number; preferredPeriod?: MealPeriod };
 export type RecommendationResponse = {
   date: string; weekday: string; courses: Course[]; freeSlots: TimeSlot[]; mealPeriod: MealPeriod;
   recommendations: Array<Restaurant & { risk: CrowdRisk; matchReason: string }>; agentTrace: string[];
