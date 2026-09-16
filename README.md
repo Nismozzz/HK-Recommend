@@ -11,6 +11,8 @@
 - 根据课程表计算 08:00-22:00 的空闲时间，并预留 30 分钟缓冲。
 - 课表支持手动添加和 CSV 导入。
 - 学校信息保存到 SQLite，并通过 `/api/profile` 在页面启动时恢复。
+- 仅在用户明确表达“喜欢/不吃/以后不要推荐”等长期意愿时保存口味偏好；“今天想吃”只影响当前请求。
+- 配置大模型后，由 LLM 从用户自由输入中提取菜品、口味、食材和饮食限制，再由后端校验后保存为结构化记录；没有模型配置时才使用本地规则降级。
 - 配置 Google Places API 后，按照用户地点和饮食需求查询真实餐厅。
 - 返回 Google 餐厅名称、地址、评分、价格等级或价格区间。
 - 餐厅结果以页面卡片展示，Agent 文字只概括空档和结果数量，避免重复输出整张餐厅列表。
@@ -83,6 +85,9 @@ npm run build
 |---|---|---|
 | `POST` | `/api/chat` | 处理自然语言就餐请求 |
 | `GET` | `/api/profile` | 读取已保存学校和课表状态 |
+| `GET` | `/api/preferences` | 读取已保存口味偏好 |
+| `DELETE` | `/api/preferences` | 清空全部口味偏好 |
+| `DELETE` | `/api/preferences/{preference_id}` | 删除一条口味偏好 |
 | `GET` | `/api/schedule` | 读取课程表 |
 | `POST` | `/api/schedule/manual` | 手动添加课程 |
 | `POST` | `/api/schedule/csv` | 导入 CSV 课表 |
@@ -96,12 +101,8 @@ app/page.tsx                 React 对话界面和课表设置
 backend/main.py              FastAPI 应用入口和 API
 backend/agent.py             Agent、自然语言解析和模型工具调用
 backend/tools.py             空闲时间和 Google Places 餐厅工具
-backend/data.py              本地示例课表和餐厅数据
 backend/schedule_store.py    SQLite 课表和学校记忆
 backend/.env.example         后端环境变量模板
-lib/parse-request.ts         Next.js 兼容解析逻辑
-lib/data.ts                  前端示例数据和类型
-lib/recommend.ts             前端兼容推荐流程
 ```
 
 ## TODO
@@ -115,12 +116,13 @@ lib/recommend.ts             前端兼容推荐流程
 - [x] 显示 Google 评分、地址和价格等级/价格区间
 - [x] 显示工作日和周末排队风险时段估计
 - [x] Agent 工具调用轨迹展示
+- [x] ai 识别今天的日期
+- [x] 当用户提问包含下课去哪吃内容时，增加距离显示，预计排队风险
+- [ ] 增加用户饮食偏好记忆
 - [ ] 接入餐厅菜单、菜品和过敏原资料
 - [ ] 增加 RAG 菜单检索和餐厅菜品二次验证
-- [ ] 增加 `.ics` 课表导入
-- [ ] 增加用户饮食偏好和忌口记忆
-- [ ] 接入可提供实时排队/候位信息的餐厅平台
 - [ ] 增加餐厅营业状态和数据更新时间展示
-- [ ] 将前端示例数据迁移到统一后端数据源
 - [ ] 增加 Python `pytest` 和端到端测试
 - [ ] 增加错误监控、请求日志和 API 重试策略
+- [ ] 增加 `.ics` 课表导入
+- [ ] 搜索结果可能不是餐厅

@@ -1,13 +1,34 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { CrowdRisk } from '../lib/data';
-import type { ParsedRequest } from '../lib/parse-request';
-import type { RecommendationResponse } from '../lib/recommend';
 
+type CrowdRisk = 'low' | 'medium' | 'high';
+type ParsedRequest = { understood: string[] };
+type RecommendationResponse = {
+  date: string;
+  weekday: string;
+  freeSlots: Array<{ start: string; end: string; minutes: number }>;
+  recommendations: Array<{
+    id: string;
+    name: string;
+    cuisines: string[];
+    price: number;
+    priceLabel?: string;
+    queueSummary?: string;
+    distanceText?: string;
+    openingStatus?: string;
+    dataUpdatedAt?: string;
+    rating: number;
+    risk: CrowdRisk;
+    note?: string;
+    matchReason?: string;
+  }>;
+  agentTrace: string[];
+};
 type AgentReply = { answer: string; parsed: ParsedRequest; result: RecommendationResponse };
 type ChatMessage = { id: number; role: 'user' | 'assistant'; text: string; reply?: AgentReply };
-type ScheduleCourse = { id: number; weekday: number; course_code: string; location: string; start_time: string; end_time: string };
+type ScheduleCourse = { id: number; weekday: number; course_code: string; start_time: string; end_time: string };
+type UserPreference = { id: number; category: string; value: string; preference: 'like' | 'dislike'; updated_at: string };
 const prompts = ['周三中午港大附近，预算100，想吃日料', '明天晚上在中环，预算120，菜系不限', '周五铜锣湾附近，想吃素食，不超过100'];
 const riskLabel: Record<CrowdRisk, string> = { low: '排队风险', medium: '排队风险', high: '排队风险' };
 const weekdayLabels = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
@@ -18,11 +39,13 @@ export default function HomePage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [preferences, setPreferences] = useState<UserPreference[]>([]);
   const [scheduleTab, setScheduleTab] = useState<'manual' | 'csv'>('manual');
   const [courses, setCourses] = useState<ScheduleCourse[]>([]);
   const [scheduleMessage, setScheduleMessage] = useState('');
-  const [manual, setManual] = useState({ weekday: '1', course_code: '', location: '', start_time: '09:00', end_time: '11:00' });
-  const [csvText, setCsvText] = useState('weekday,course_code,location,start_time,end_time\n1,COMP701,HKU Main Building,09:00,11:00');
+  const [manual, setManual] = useState({ weekday: '1', course_code: '', start_time: '09:00', end_time: '11:00' });
+  const [csvText, setCsvText] = useState('');
   const nextId = useRef(2);
   const conversationRef = useRef<HTMLDivElement>(null);
 
@@ -61,6 +84,17 @@ export default function HomePage() {
     catch { setScheduleMessage('无法连接课表服务，请先启动 FastAPI。'); }
   }
 
+  async function openPreferences() {
+    setPreferencesOpen(true); setScheduleMessage('');
+    try { const response = await fetch(apiUrl('/api/preferences')); const payload = await response.json(); setPreferences(payload.preferences || []); }
+    catch { setScheduleMessage('无法读取口味偏好。'); }
+  }
+
+  async function clearPreferences() {
+    const response = await fetch(apiUrl('/api/preferences'), { method: 'DELETE' });
+    if (response.ok) setPreferences([]);
+  }
+
   async function addManual(event: React.FormEvent) {
     event.preventDefault(); setScheduleMessage('');
     try {
@@ -68,7 +102,7 @@ export default function HomePage() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || '添加失败');
       setCourses((current) => [...current, payload.course].sort((a, b) => a.weekday - b.weekday || a.start_time.localeCompare(b.start_time)));
-      setManual((current) => ({ ...current, course_code: '', location: '' })); setScheduleMessage('课程已添加');
+      setManual((current) => ({ ...current, course_code: '' })); setScheduleMessage('课程已添加');
     } catch (error) { setScheduleMessage(error instanceof Error ? error.message : '添加失败'); }
   }
 
@@ -95,7 +129,7 @@ export default function HomePage() {
   }
 
   return <main className="app-shell">
-    <aside className="sidebar"><div><div className="brand-mark">HK</div><h1>HK Recommend</h1><p>课余就餐 Agent</p></div><div className="agent-status"><span />本地工具已连接</div><button className="schedule-button" onClick={openSchedule}>课表设置 <span>+</span></button><div className="side-note"><strong>当前能力</strong><p>读取你的课表<br />计算空闲时间<br />筛选香港餐厅<br />估计排队风险</p></div><footer>Agent MVP · v0.3</footer></aside>
+    <aside className="sidebar"><div><div className="brand-mark">HK</div><h1>HK Recommend</h1><p>课余就餐 Agent</p></div><div className="agent-status"><span />本地工具已连接</div><button className="schedule-button" onClick={openSchedule}>课表设置 <span>+</span></button><button className="schedule-button" onClick={openPreferences}>口味偏好 <span>+</span></button><div className="side-note"><strong>当前能力</strong><p>读取你的课表<br />计算空闲时间<br />筛选香港餐厅<br />估计排队风险</p></div><footer>Agent MVP · v0.3</footer></aside>
     <section className="chat-panel">
       <header className="chat-header"><div><h2>去哪吃助手</h2><p>用自然语言告诉我你的需求</p></div><button className="clear-button" onClick={() => setMessages((current) => current.slice(0, 1))}>清空对话</button></header>
       <div className="conversation" ref={conversationRef}>
@@ -108,7 +142,8 @@ export default function HomePage() {
         <p className="composer-note">排队风险按工作日/周末用餐时段估计，不代表实时排队情况。</p>
       </div>
     </section>
-    {scheduleOpen && <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setScheduleOpen(false); }}><section className="schedule-modal" role="dialog" aria-modal="true" aria-labelledby="schedule-title"><header><div><p className="eyebrow dark">SCHEDULE</p><h2 id="schedule-title">管理我的课表</h2></div><button className="modal-close" onClick={() => setScheduleOpen(false)} aria-label="关闭">×</button></header><div className="tabs"><button className={scheduleTab === 'manual' ? 'active' : ''} onClick={() => setScheduleTab('manual')}>手动添加</button><button className={scheduleTab === 'csv' ? 'active' : ''} onClick={() => setScheduleTab('csv')}>导入 CSV</button></div>{scheduleTab === 'manual' ? <form className="schedule-form" onSubmit={addManual}><div className="field"><label htmlFor="weekday">星期</label><select id="weekday" value={manual.weekday} onChange={(event) => setManual({ ...manual, weekday: event.target.value })}>{weekdayLabels.map((label, index) => <option value={index} key={label}>{label}</option>)}</select></div><div className="field"><label htmlFor="course-code">课程代号</label><input id="course-code" placeholder="例如 COMP701" value={manual.course_code} onChange={(event) => setManual({ ...manual, course_code: event.target.value })} required /></div><div className="field"><label htmlFor="location">上课地点</label><input id="location" placeholder="例如 Main Building" value={manual.location} onChange={(event) => setManual({ ...manual, location: event.target.value })} required /></div><div className="split-fields"><div className="field"><label htmlFor="start">开始时间</label><input id="start" type="time" value={manual.start_time} onChange={(event) => setManual({ ...manual, start_time: event.target.value })} required /></div><div className="field"><label htmlFor="end">结束时间</label><input id="end" type="time" value={manual.end_time} onChange={(event) => setManual({ ...manual, end_time: event.target.value })} required /></div></div><button className="primary-button" type="submit">添加课程 <span>→</span></button></form> : <form className="schedule-form" onSubmit={importCsv}><p className="csv-hint">表头支持：`weekday,course_code,location,start_time,end_time`。星期使用 0-6，0 是星期日。</p><input className="csv-file" type="file" accept=".csv,text/csv" onChange={readCsvFile} /><textarea className="csv-input" value={csvText} onChange={(event) => setCsvText(event.target.value)} rows={6} /><button className="primary-button" type="submit">导入 CSV <span>→</span></button></form>}{scheduleMessage && <p className="schedule-message">{scheduleMessage}</p>}<div className="course-list"><div className="list-heading"><h3>已保存课程</h3><span>{courses.length} 门</span></div>{courses.length ? courses.map((course) => <div className="course-row" key={course.id}><div><b>{course.course_code}</b><span>{weekdayLabels[course.weekday]} · {course.start_time}-{course.end_time}</span><small>{course.location}</small></div><button onClick={() => removeCourse(course.id)} aria-label={`删除 ${course.course_code}`}>删除</button></div>) : <p className="empty-course">还没有手动导入的课程。未导入时 Agent 会使用示例课表。</p>}</div></section></div>}
+    {preferencesOpen && <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setPreferencesOpen(false); }}><section className="schedule-modal" role="dialog" aria-modal="true" aria-labelledby="preferences-title"><header><div><p className="eyebrow dark">MEMORY</p><h2 id="preferences-title">我的口味偏好</h2></div><button className="modal-close" onClick={() => setPreferencesOpen(false)} aria-label="关闭">×</button></header><div className="course-list">{preferences.length ? preferences.map((item) => <div className="course-row" key={item.id}><div><b>{item.preference === 'like' ? '喜欢' : '不喜欢'} · {item.value}</b><span>{item.category}</span></div></div>) : <p className="empty-course">还没有保存的长期口味偏好。明确说“我喜欢……”或“我不吃……”后才会记录。</p>}<button className="primary-button" type="button" onClick={clearPreferences} disabled={!preferences.length}>清空偏好</button></div></section></div>}
+    {scheduleOpen && <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setScheduleOpen(false); }}><section className="schedule-modal" role="dialog" aria-modal="true" aria-labelledby="schedule-title"><header><div><p className="eyebrow dark">SCHEDULE</p><h2 id="schedule-title">管理我的课表</h2></div><button className="modal-close" onClick={() => setScheduleOpen(false)} aria-label="关闭">×</button></header><div className="tabs"><button className={scheduleTab === 'manual' ? 'active' : ''} onClick={() => setScheduleTab('manual')}>手动添加</button><button className={scheduleTab === 'csv' ? 'active' : ''} onClick={() => setScheduleTab('csv')}>导入 CSV</button></div>{scheduleTab === 'manual' ? <form className="schedule-form" onSubmit={addManual}><div className="field"><label htmlFor="weekday">星期</label><select id="weekday" value={manual.weekday} onChange={(event) => setManual({ ...manual, weekday: event.target.value })}>{weekdayLabels.map((label, index) => <option value={index} key={label}>{label}</option>)}</select></div><div className="field"><label htmlFor="course-code">课程代号</label><input id="course-code" placeholder="例如 COMP701" value={manual.course_code} onChange={(event) => setManual({ ...manual, course_code: event.target.value })} required /></div><div className="split-fields"><div className="field"><label htmlFor="start">开始时间</label><input id="start" type="time" value={manual.start_time} onChange={(event) => setManual({ ...manual, start_time: event.target.value })} required /></div><div className="field"><label htmlFor="end">结束时间</label><input id="end" type="time" value={manual.end_time} onChange={(event) => setManual({ ...manual, end_time: event.target.value })} required /></div></div><button className="primary-button" type="submit">添加课程 <span>→</span></button></form> : <form className="schedule-form" onSubmit={importCsv}><p className="csv-hint">表头支持：`weekday,course_code,start_time,end_time`。星期使用 0-6，0 是星期日。</p><input className="csv-file" type="file" accept=".csv,text/csv" onChange={readCsvFile} /><textarea className="csv-input" value={csvText} onChange={(event) => setCsvText(event.target.value)} rows={6} /><button className="primary-button" type="submit">导入 CSV <span>→</span></button></form>}{scheduleMessage && <p className="schedule-message">{scheduleMessage}</p>}<div className="course-list"><div className="list-heading"><h3>已保存课程</h3><span>{courses.length} 门</span></div>{courses.length ? courses.map((course) => <div className="course-row" key={course.id}><div><b>{course.course_code}</b><span>{weekdayLabels[course.weekday]} · {course.start_time}-{course.end_time}</span></div><button onClick={() => removeCourse(course.id)} aria-label={`删除 ${course.course_code}`}>删除</button></div>) : <p className="empty-course">还没有导入课程。未导入时，Agent 会按全天可用处理。</p>}</div></section></div>}
   </main>;
 }
 
@@ -116,7 +151,7 @@ function AgentResult({ reply }: { reply: AgentReply }) {
   const { result, parsed } = reply;
   return <div className="agent-result"><div className="understood"><span>我理解的条件</span><div>{parsed.understood.map((item) => <b key={item}>{item}</b>)}</div></div>
     <section><div className="result-title"><h3>可用时间</h3><span>{result.weekday}</span></div><div className="slots">{result.freeSlots.map((slot) => <span key={`${slot.start}-${slot.end}`}>{slot.start} - {slot.end}</span>)}</div></section>
-    {!!result.recommendations.length && <section><div className="result-title"><h3>推荐餐厅</h3><span>{result.recommendations.length} 个结果</span></div><div className="restaurant-list">{result.recommendations.map((restaurant, index) => <article className="restaurant" key={restaurant.id}><div className="rank">{String(index + 1).padStart(2, '0')}</div><div className="restaurant-main"><div className="restaurant-head"><div><h4>{restaurant.name}</h4><p>{restaurant.cuisines.join(' · ')} · {restaurant.priceLabel ?? `人均 HK$${restaurant.price}`}</p></div><span className={`risk ${restaurant.risk}`}>{riskLabel[restaurant.risk]}</span></div><p className="reason">{restaurant.note}</p><p className="reason">排队风险：{restaurant.queueSummary ?? '工作日午餐及晚餐高峰可能需要排队，其余时间排队几率较小。'}</p><div className="restaurant-meta"><span>评分 {restaurant.rating.toFixed(1)}</span><span>步行约 {restaurant.walkMinutes} 分钟</span></div></div></article>)}</div></section>}
+    {!!result.recommendations.length && <section><div className="result-title"><h3>推荐餐厅</h3><span>{result.recommendations.length} 个结果</span></div><div className="restaurant-list">{result.recommendations.map((restaurant, index) => <article className="restaurant" key={restaurant.id}><div className="rank">{String(index + 1).padStart(2, '0')}</div><div className="restaurant-main"><div className="restaurant-head"><div><h4>{restaurant.name}</h4><p>{restaurant.cuisines.join(' · ')} · {restaurant.priceLabel ?? `人均 HK$${restaurant.price}`}</p></div><span className={`risk ${restaurant.risk}`}>{restaurant.risk === 'low' ? '低排队风险' : restaurant.risk === 'high' ? '排队概率较高' : '可能需要排队'}</span></div><p className="reason">{restaurant.matchReason}</p><p className="reason">排队风险：{restaurant.queueSummary ?? '工作日午餐及晚餐高峰可能需要排队，其余时间排队几率较小。'}</p><div className="restaurant-meta"><span>评分 {restaurant.rating.toFixed(1)}</span>{restaurant.distanceText && <span>距该地址约 {restaurant.distanceText}</span>}{restaurant.openingStatus && <span className={restaurant.openingStatus === '营业中' ? 'open-status' : 'closed-status'}>{restaurant.openingStatus}</span>}{restaurant.dataUpdatedAt && <span>资料更新 {restaurant.dataUpdatedAt}</span>}</div></div></article>)}</div></section>}
     <details><summary>查看 Agent 的工具调用过程</summary><ol>{result.agentTrace.map((step) => <li key={step}>{step}</li>)}</ol></details>
   </div>;
 }

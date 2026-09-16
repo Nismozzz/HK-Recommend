@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 from .agent import model_agent
-from .schedule_store import add_course, delete_course, get_school, import_csv, list_courses
+from .schedule_store import add_course, clear_preferences, delete_course, delete_preference, get_preferences, get_school, import_csv, list_courses, list_preferences
 
 # Resolve configuration relative to this module, so starting uvicorn from the
 # repository root still loads backend/.env.
@@ -49,7 +49,23 @@ def schedule_list():
 @app.get("/api/profile")
 def profile():
     """Return the persisted school so the UI can restore the user's context."""
-    return {"school": get_school(), "has_schedule": bool(list_courses())}
+    return {"school": get_school(), "has_schedule": bool(list_courses()), "preferences": get_preferences()}
+
+
+@app.get("/api/preferences")
+def preferences_list():
+    return {"preferences": list_preferences()}
+
+
+@app.delete("/api/preferences")
+def preferences_clear():
+    clear_preferences()
+    return {"cleared": True}
+
+
+@app.delete("/api/preferences/{preference_id}")
+def preference_delete(preference_id: int):
+    return {"deleted": delete_preference(preference_id)}
 
 
 @app.post("/api/schedule/manual")
