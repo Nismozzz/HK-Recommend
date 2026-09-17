@@ -5,6 +5,11 @@ from datetime import datetime
 from typing import Any
 
 import httpx
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.tools import StructuredTool
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode, tools_condition
 
 from .schedule_store import get_preferences, get_school, list_courses, save_preference, save_school
 from .tools import WEEKDAYS, courses_for_date, get_free_slots, local_date_from_message, parse_minutes, search_restaurants
@@ -127,7 +132,7 @@ def school_from_message(message: str) -> str | None:
     return value
 
 
-def deterministic_agent(message: str) -> dict[str, Any]:
+def deterministic_agent(message: str, execute_tools: bool = True) -> dict[str, Any]:
     school = get_school()
     mentioned_school = school_from_message(message)
     if mentioned_school:
@@ -148,8 +153,8 @@ def deterministic_agent(message: str) -> dict[str, Any]:
                 parsed["food_query"] = preferred_dish
                 parsed["understood"].append(f"沿用偏好 {preferred_dish}")
     has_schedule = bool(list_courses())
-    courses = courses_for_date(parsed["date"]) if has_schedule else []
-    slots = get_free_slots(courses, parsed["duration"])
+    courses = courses_for_date(parsed["date"]) if has_schedule and execute_tools else []
+    slots = get_free_slots(courses, parsed["duration"]) if execute_tools else []
     after_class_time = max((course["end"] for course in courses), default=None)
     if parsed.get("after_class") and after_class_time:
         slots = [slot for slot in slots if parse_minutes(slot["start"]) >= parse_minutes(after_class_time)]
@@ -157,7 +162,7 @@ def deterministic_agent(message: str) -> dict[str, Any]:
     radius_m = 1000 if parsed.get("after_class") else 2500
     avoid = ", 避免 " + "、".join(preferences["dislikes"]) if preferences["dislikes"] else ""
     request_weekend = datetime.strptime(parsed["date"], "%Y-%m-%d").weekday() >= 5
-    recommendations = search_restaurants(parsed["area"], parsed["budget"], parsed["cuisine"], meal_period, parsed.get("location_query"), (parsed.get("food_query") or "") + avoid, radius_m, school if parsed.get("after_class") else None, parsed.get("request_time"), request_weekend) if slots and parsed["area"] else []
+    recommendations = search_restaurants(parsed["area"], parsed["budget"], parsed["cuisine"], meal_period, parsed.get("location_query"), (parsed.get("food_query") or "") + avoid, radius_m, school if parsed.get("after_class") else None, parsed.get("request_time"), request_weekend) if execute_tools and slots and parsed["area"] else []
     weekday = WEEKDAYS[(datetime.strptime(parsed["date"], "%Y-%m-%d").date().weekday() + 1) % 7]
     if not slots:
         answer = f"我查了{weekday}的课表，没有找到满足 {parsed['duration']} 分钟用餐需求的空闲时段。你可以换一天或缩短用餐时间。"
@@ -179,12 +184,6 @@ def deterministic_agent(message: str) -> dict[str, Any]:
     return {"answer": answer + profile_hint, "parsed": parsed, "profile": {"school": school, "has_schedule": has_schedule, "preferences": preferences}, "result": {"date": parsed["date"], "weekday": weekday, "courses": courses, "afterClassTime": after_class_time if parsed.get("after_class") else None, "freeSlots": slots, "mealPeriod": meal_period, "recommendations": recommendations, "agentTrace": ["读取已记住的学校" if school else "未设置学校，使用通用推荐", "读取已记住的口味偏好", "解析自然语言需求", "调用 get_free_slots 查询课表空闲时间", "下课后按学校周边 1 公里范围搜索" if parsed.get("after_class") else "调用 search_restaurants 筛选餐厅", "按时段估计拥挤风险并排序"]}}
 
 
-TOOLS = [
-    {"type": "function", "function": {"name": "get_free_slots", "description": "查询指定日期的课程空闲时间，必须先调用此工具。", "parameters": {"type": "object", "properties": {"date": {"type": "string", "description": "YYYY-MM-DD"}, "duration": {"type": "integer", "description": "用餐分钟数"}}, "required": ["date", "duration"]}}},
-    {"type": "function", "function": {"name": "search_restaurants", "description": "按照用户地点、预算、菜系或具体菜品搜索真实餐厅。", "parameters": {"type": "object", "properties": {"area": {"type": "string", "description": "自然语言地点"}, "budget": {"type": "integer"}, "cuisine": {"type": "string"}, "food_query": {"type": "string", "description": "用户提到的具体菜品，例如海鲜、炸鸡、海南鸡饭、乌冬面"}, "meal_period": {"type": "string", "enum": ["lunch", "dinner"]}}, "required": ["area", "budget", "cuisine", "meal_period"]}}},
-]
-
-
 def model_agent(message: str) -> dict[str, Any]:
     api_key = os.getenv("MODEL_API_KEY")
     if not api_key:
@@ -192,51 +191,82 @@ def model_agent(message: str) -> dict[str, Any]:
     base_url = os.getenv("MODEL_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     model = os.getenv("MODEL_NAME", "gpt-4o-mini")
     extract_preferences_with_model(message, api_key, base_url, model)
-    local = deterministic_agent(message)
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": f"你是香港课余就餐 Agent。本次请求使用的日期是 {local['parsed']['date']}。空闲时间范围固定为 08:00-23:00，直接扣除上课时间，不设置交通缓冲。用户学校是 {local.get('profile', {}).get('school', '未提供')}。用户长期口味偏好：喜欢 {', '.join(local.get('profile', {}).get('preferences', {}).get('likes', [])) or '暂无'}；不喜欢或忌口 {', '.join(local.get('profile', {}).get('preferences', {}).get('dislikes', [])) or '暂无'}。学校和课表是可选个性化信息，不得阻止普通餐厅推荐。必须先调用 get_free_slots，再调用 search_restaurants；只要有空档就必须继续搜索餐厅，不能只回答空档时间。用户说‘今天/明天/后天/周几’时，必须使用后端解析出的日期，不能自行猜测日期。用户说下课后去吃时，先读取当天课表并依据最后一节课结束时间，餐厅搜索范围限制为学校周边 1 公里。课表工具返回的课程必须视为当天真实课程，不能说当天没课，除非工具返回的课程列表确实为空。用户提到具体食物（例如海鲜、炸鸡、海南鸡饭、乌冬面）时，必须把它作为 food_query 传给 search_restaurants；用户说粤菜、川菜等时放入 cuisine。地点使用用户原话或已记住学校，不要把相对地点（学校旁边、校门口）原样传给搜索工具。只使用工具返回的数据，不要编造餐厅。最后用简洁中文回答，只概括空档和找到的餐厅数量，不要在文字中逐一列出餐厅、评分、价格或地址；具体餐厅列表由前端结果卡片展示。"},
-        {"role": "user", "content": message},
-    ]
+    local = deterministic_agent(message, execute_tools=False)
     state = local["result"]
+
+    def free_slots_tool(date: str, duration: int = 60) -> str:
+        """查询指定日期的课程和空闲时间。涉及今天、课程、课余或下课时间时使用。"""
+        relative_date = bool(re.search(r"今天|明天|后天|(?:周|星期)[一二三四五六日天]", message))
+        tool_date = local["parsed"]["date"] if relative_date else date
+        courses = courses_for_date(tool_date) if list_courses() else []
+        value = get_free_slots(courses, duration)
+        after_class_time = max((course["end"] for course in courses), default=None)
+        if local["parsed"].get("after_class") and after_class_time:
+            value = [slot for slot in value if parse_minutes(slot["start"]) >= parse_minutes(after_class_time)]
+        state["courses"] = courses
+        state["freeSlots"] = value
+        state["afterClassTime"] = after_class_time if local["parsed"].get("after_class") else None
+        return json.dumps({"date": tool_date, "courses": courses, "after_class_time": state["afterClassTime"], "free_slots": value}, ensure_ascii=False)
+
+    def restaurants_tool(area: str, budget: int = 100, cuisine: str = "all", food_query: str = "", meal_period: str = "lunch") -> str:
+        """按照地点、预算、菜系或具体菜品查询餐厅、距离、营业状态和排队风险。"""
+        tool_area = area.strip()
+        if re.fullmatch(r"学校|學校|校园|校園|学校旁边|學校旁邊|校门口|校門口|校园旁边|校園旁邊", tool_area):
+            tool_area = local.get("profile", {}).get("school") or tool_area
+        tool_cuisine = local["parsed"].get("cuisine") if local["parsed"].get("cuisine") != "all" else cuisine
+        dislikes = local.get("profile", {}).get("preferences", {}).get("dislikes", [])
+        dislike_hint = ", 避免 " + "、".join(dislikes) if dislikes else ""
+        tool_food_query = (local["parsed"].get("food_query") or food_query or "") + dislike_hint
+        request_weekend = datetime.strptime(local["parsed"]["date"], "%Y-%m-%d").weekday() >= 5
+        value = search_restaurants(
+            tool_area,
+            budget,
+            tool_cuisine,
+            meal_period,
+            tool_area,
+            tool_food_query,
+            1000 if local["parsed"].get("after_class") else 2500,
+            local.get("profile", {}).get("school") if local["parsed"].get("after_class") else None,
+            local["parsed"].get("request_time"),
+            request_weekend,
+        )
+        state["mealPeriod"] = meal_period
+        state["recommendations"] = value
+        return json.dumps(value, ensure_ascii=False)
+
+    tools = [
+        StructuredTool.from_function(free_slots_tool, name="get_free_slots"),
+        StructuredTool.from_function(restaurants_tool, name="search_restaurants"),
+    ]
+    system_prompt = f"""你是香港课余就餐 Agent。本次请求使用的日期是 {local['parsed']['date']}。
+你可以自主判断是否调用工具以及调用顺序。涉及课程、空闲时间或下课后请求时调用 get_free_slots；需要推荐餐厅时调用 search_restaurants。可以根据工具结果继续调用其他工具或直接回答。
+空闲时间范围固定为 08:00-23:00，直接扣除上课时间，不设置交通缓冲。用户学校是 {local.get('profile', {}).get('school', '未提供')}。用户长期口味偏好：喜欢 {', '.join(local.get('profile', {}).get('preferences', {}).get('likes', [])) or '暂无'}；不喜欢或忌口 {', '.join(local.get('profile', {}).get('preferences', {}).get('dislikes', [])) or '暂无'}。
+用户说今天、明天、后天或周几时使用后端提供的日期。下课后用餐要先查询课表，并将餐厅搜索限制为学校周边 1 公里。不得编造工具未返回的课程或餐厅。
+最后用简洁中文概括空档和餐厅数量，不逐一复述餐厅详情；具体餐厅由前端卡片展示。"""
+
+    def call_model(graph_state: MessagesState) -> dict[str, list[AIMessage]]:
+        return {"messages": [llm.invoke(graph_state["messages"])]}
+
     try:
-        with httpx.Client(timeout=45) as client:
-            for _ in range(4):
-                response = client.post(f"{base_url}/chat/completions", headers={"Authorization": f"Bearer {api_key}"}, json={"model": model, "messages": messages, "tools": TOOLS, "tool_choice": "auto"})
-                response.raise_for_status()
-                assistant = response.json()["choices"][0]["message"]
-                messages.append(assistant)
-                calls = assistant.get("tool_calls", [])
-                if not calls:
-                    answer = assistant.get("content") or local["answer"]
-                    # Do not let a model hallucinate "no class" when the
-                    # backend already found courses for the requested day.
-                    if local["result"].get("courses") and re.search(r"没课|没有课|无课|没有安排课程", answer):
-                        answer = local["answer"]
-                    return {**local, "answer": answer, "result": {**state, "agentTrace": ["大模型理解自然语言需求", "模型选择并调用后端工具", "校验工具结果并生成回答"]}}
-                for call in calls:
-                    name = call["function"]["name"]
-                    arguments = json.loads(call["function"].get("arguments", "{}"))
-                    if name == "get_free_slots":
-                        relative_date = bool(re.search(r"今天|明天|后天|(?:周|星期)[一二三四五六日天]", message))
-                        tool_date = local["parsed"]["date"] if relative_date else arguments.get("date", local["parsed"]["date"])
-                        value = get_free_slots(courses_for_date(tool_date) if list_courses() else [], int(arguments.get("duration", local["parsed"].get("duration", 60))))
-                        state["freeSlots"] = value
-                    elif name == "search_restaurants":
-                        tool_area = str(arguments.get("area", "")).strip()
-                        if re.fullmatch(r"学校|學校|校园|校園|学校旁边|學校旁邊|校门口|校門口|校园旁边|校園旁邊", tool_area):
-                            tool_area = local.get("profile", {}).get("school") or tool_area
-                        tool_cuisine = arguments.get("cuisine", "all")
-                        if local["parsed"].get("cuisine") != "all":
-                            tool_cuisine = local["parsed"]["cuisine"]
-                        remembered_dislikes = local.get("profile", {}).get("preferences", {}).get("dislikes", [])
-                        dislike_hint = ", 避免 " + "、".join(remembered_dislikes) if remembered_dislikes else ""
-                        tool_food_query = (local["parsed"].get("food_query") or arguments.get("food_query") or "") + dislike_hint
-                        request_weekend = datetime.strptime(local["parsed"]["date"], "%Y-%m-%d").weekday() >= 5
-                        value = search_restaurants(tool_area, int(arguments.get("budget", local["parsed"].get("budget", 100))), tool_cuisine, arguments.get("meal_period", "lunch"), tool_area, tool_food_query, 1000 if local["parsed"].get("after_class") else 2500, local.get("profile", {}).get("school") if local["parsed"].get("after_class") else None, local["parsed"].get("request_time"), request_weekend)
-                        state["recommendations"] = value
-                    else:
-                        value = {"error": "unknown tool"}
-                    messages.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(value, ensure_ascii=False)})
-    except (httpx.HTTPError, KeyError, ValueError, json.JSONDecodeError):
-        return {**local, "result": {**local["result"], "agentTrace": ["大模型调用失败，切换本地工具工作流", *local["result"]["agentTrace"]]}}
-    return local
+        llm = ChatOpenAI(model=model, api_key=api_key, base_url=base_url, temperature=0, timeout=45).bind_tools(tools)
+        graph_builder = StateGraph(MessagesState)
+        graph_builder.add_node("agent", call_model)
+        graph_builder.add_node("tools", ToolNode(tools))
+        graph_builder.add_edge(START, "agent")
+        graph_builder.add_conditional_edges("agent", tools_condition, {"tools": "tools", END: END})
+        graph_builder.add_edge("tools", "agent")
+        graph = graph_builder.compile()
+        graph_result = graph.invoke(
+            {"messages": [SystemMessage(content=system_prompt), HumanMessage(content=message)]},
+            {"recursion_limit": 10},
+        )
+        answer_message = next((item for item in reversed(graph_result["messages"]) if isinstance(item, AIMessage) and item.content), None)
+        answer = str(answer_message.content) if answer_message else local["answer"]
+        if state.get("courses") and re.search(r"没课|没有课|无课|没有安排课程", answer):
+            answer = f"课表显示当天有 {len(state['courses'])} 节课，请以页面中的课程和空闲时间为准。"
+        tool_names = [call.get("name", "") for item in graph_result["messages"] if isinstance(item, AIMessage) for call in item.tool_calls]
+        trace = ["LangGraph Agent 理解用户请求", *[f"Agent 自主调用 {name}" for name in tool_names], "Agent 根据工具结果生成回答"]
+        return {**local, "answer": answer, "result": {**state, "agentTrace": trace}}
+    except Exception:
+        fallback = deterministic_agent(message)
+        return {**fallback, "result": {**fallback["result"], "agentTrace": ["LangGraph 调用失败，切换本地工具工作流", *fallback["result"]["agentTrace"]]}}
